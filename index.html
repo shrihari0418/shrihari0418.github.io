@@ -190,6 +190,23 @@ window._isIframe = (() => { try { return window.self !== window.top; } catch(e) 
   ::-webkit-scrollbar-track { background: var(--bg2); }
   ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 
+  /* ── API Key block ── */
+  .apikey-block { background: #0d1a0d; border: 1px solid var(--border2); border-radius: 8px; padding: 12px 14px; }
+  .apikey-block label { display: flex; align-items: center; gap: 6px; font-size: 10px; font-family: var(--mono); color: var(--text3); text-transform: uppercase; letter-spacing: .12em; margin-bottom: 7px; }
+  .apikey-block label svg { width: 12px; height: 12px; stroke: var(--text3); fill: none; }
+  .apikey-row { display: flex; gap: 6px; }
+  .apikey-row input { flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text); font-size: 12px; font-family: var(--mono); padding: 7px 10px; border-radius: 5px; outline: none; transition: border-color .2s; letter-spacing: .05em; }
+  .apikey-row input:focus { border-color: var(--green); }
+  .apikey-row input.valid { border-color: var(--green); }
+  .apikey-row input.invalid { border-color: var(--red); }
+  .apikey-toggle { background: var(--bg3); border: 1px solid var(--border); color: var(--text3); font-size: 11px; padding: 0 10px; border-radius: 5px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .apikey-toggle:hover { border-color: var(--green); color: var(--green); }
+  .apikey-hint { font-size: 10px; color: var(--text3); font-family: var(--mono); margin-top: 6px; line-height: 1.5; }
+  .apikey-hint a { color: var(--green); }
+  .apikey-status { display: inline-block; font-size: 10px; font-family: var(--mono); margin-top: 5px; }
+  .apikey-status.ok  { color: var(--green); }
+  .apikey-status.bad { color: var(--red); }
+
   /* ── Local-use banner ── */
   .local-banner { background: #1a1400; border-bottom: 1px solid #4a3a00; padding: 10px 20px; display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--amber); font-family: var(--mono); }
   .local-banner svg { width: 16px; height: 16px; stroke: var(--amber); fill: none; flex-shrink: 0; }
@@ -212,7 +229,7 @@ window._isIframe = (() => { try { return window.self !== window.top; } catch(e) 
 <!-- iframe / preview warning banner -->
 <div class="local-banner" id="localBanner" style="display:none">
   <svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-  <span><strong>Running in preview mode.</strong> The Analyze and PDF buttons require this file to be opened locally. <a id="saveLink">Download the HTML file</a> → open it in your browser → full functionality enabled.</span>
+  <span><strong>Running in preview mode.</strong> Enter your Anthropic API key in the panel on the left to use this tool. Or <a id="saveLink">download the HTML file</a> and open it locally — the key persists in sessionStorage.</span>
   <span class="dismiss" id="dismissBanner" title="Dismiss">×</span>
 </div>
 
@@ -229,6 +246,22 @@ window._isIframe = (() => { try { return window.self !== window.top; } catch(e) 
 
 <div class="main">
   <div class="left-panel">
+    <div class="apikey-block">
+      <label>
+        <svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+        Anthropic API Key
+      </label>
+      <div class="apikey-row">
+        <input type="password" id="apiKey" placeholder="sk-ant-api03-..." autocomplete="off" spellcheck="false">
+        <button class="apikey-toggle" id="apiKeyToggle">Show</button>
+      </div>
+      <div class="apikey-hint">
+        Get your key at <a href="https://console.anthropic.com/keys" target="_blank">console.anthropic.com/keys</a><br>
+        Stored in sessionStorage only · never sent anywhere except api.anthropic.com
+      </div>
+      <div class="apikey-status" id="apiKeyStatus"></div>
+    </div>
+
     <div>
       <div class="section-label">1 — Trace Image</div>
       <div class="upload-zone" id="uploadZone">
@@ -430,6 +463,60 @@ const loadingMsg   = document.getElementById('loadingMsg');
 const hmapCanvas   = document.getElementById('hmapCanvas');
 const hmapLoading  = document.getElementById('hmapLoading');
 const hmapWrap     = document.getElementById('hmapWrap');
+const apiKeyInput  = document.getElementById('apiKey');
+const apiKeyStatus = document.getElementById('apiKeyStatus');
+const apiKeyToggle = document.getElementById('apiKeyToggle');
+
+// ── API Key management ────────────────────────────────────────────────────
+// Restore from sessionStorage on load
+(function() {
+  const saved = sessionStorage.getItem('pcb_api_key');
+  if (saved) { apiKeyInput.value = saved; validateKey(saved); }
+})();
+
+apiKeyInput.addEventListener('input', () => {
+  const v = apiKeyInput.value.trim();
+  sessionStorage.setItem('pcb_api_key', v);
+  validateKey(v);
+  updateAnalyzeBtn();
+});
+
+apiKeyToggle.addEventListener('click', () => {
+  const isPass = apiKeyInput.type === 'password';
+  apiKeyInput.type = isPass ? 'text' : 'password';
+  apiKeyToggle.textContent = isPass ? 'Hide' : 'Show';
+});
+
+function validateKey(v) {
+  if (!v) {
+    apiKeyInput.className = '';
+    apiKeyStatus.textContent = '';
+    return false;
+  }
+  if (v.startsWith('sk-ant-')) {
+    apiKeyInput.className = 'valid';
+    apiKeyStatus.className = 'apikey-status ok';
+    apiKeyStatus.textContent = '✓ Key format valid';
+    return true;
+  }
+  apiKeyInput.className = 'invalid';
+  apiKeyStatus.className = 'apikey-status bad';
+  apiKeyStatus.textContent = '✗ Should start with sk-ant-';
+  return false;
+}
+
+function getApiKey() {
+  const v = (apiKeyInput.value || sessionStorage.getItem('pcb_api_key') || '').trim();
+  if (!v) throw new Error('Please enter your Anthropic API key above before running analysis.');
+  if (!v.startsWith('sk-ant-')) throw new Error('Invalid API key format. It should start with sk-ant-');
+  return v;
+}
+
+function updateAnalyzeBtn() {
+  const hasKey = apiKeyInput.value.trim().startsWith('sk-ant-');
+  const hasImg = !!imageB64;
+  btnAnalyze.disabled = !(hasKey && hasImg);
+}
 
 // ── File handling ─────────────────────────────────────────────────────────
 fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
@@ -439,7 +526,7 @@ uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classL
 imgClear.addEventListener('click', () => {
   imageB64 = null; imageMime = null; bgImage = null; hotspotData = null;
   previewWrap.style.display = 'none'; uploadZone.style.display = 'block';
-  fileInput.value = ''; btnAnalyze.disabled = true; showState('idle');
+  fileInput.value = ''; updateAnalyzeBtn(); showState('idle');
 });
 
 function handleFile(file) {
@@ -455,6 +542,7 @@ function handleFile(file) {
     btnAnalyze.disabled = false; showState('idle');
     // Pre-load image for canvas
     bgImage = new Image(); bgImage.src = dataUrl;
+    updateAnalyzeBtn();
   };
   reader.readAsDataURL(file);
 }
@@ -475,6 +563,14 @@ async function runAnalysis() {
 
   showState('loading');
   btnAnalyze.disabled = true;
+
+  let apiKey;
+  try { apiKey = getApiKey(); } catch(e) {
+    errorMsg.textContent = e.message;
+    showState('error');
+    btnAnalyze.disabled = false;
+    return;
+  }
   hotspotData = null;
 
   const steps = ['Analyzing PCB trace geometry...','Extracting trace width & routing...','Computing DC resistance model...','Evaluating IPC-2221 compliance...'];
@@ -519,7 +615,12 @@ Use IPC-2221B: I=0.048×ΔT^0.44×A^0.725 (external), R(T)=R₀×[1+0.00393×(T-
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6', max_tokens: 1000,
         messages: [{ role: 'user', content: [
@@ -544,7 +645,7 @@ Use IPC-2221B: I=0.048×ΔT^0.44×A^0.725 (external), R(T)=R₀×[1+0.00393×(T-
     btnExport.style.display = 'flex';
 
     // Now run the heatmap analysis as a second parallel call
-    runHeatmapAnalysis(analysis, { voltage, current, maxDrop, temp, copper, layer });
+    runHeatmapAnalysis(analysis, { voltage, current, maxDrop, temp, copper, layer }, apiKey);
 
   } catch(e) {
     clearInterval(stInt);
@@ -615,7 +716,7 @@ function repairJSON(raw) {
 }
 
 // ── Heatmap Analysis (2nd AI call) ────────────────────────────────────────
-async function runHeatmapAnalysis(mainAnalysis, params) {
+async function runHeatmapAnalysis(mainAnalysis, params, apiKey) {
   hmapLoading.classList.remove('hidden');
 
   // Keep descriptions SHORT to stay well within token budget
@@ -639,7 +740,12 @@ Rules:
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6', max_tokens: 2000,
         messages: [{ role: 'user', content: [
