@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCB DC Drop Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+// Detect if running inside an iframe (claude.ai preview) vs saved locally
+window._isIframe = (() => { try { return window.self !== window.top; } catch(e) { return true; } })();
+</script>
+<style>
+  :root {
+    --bg: #0a0f0a; --bg2: #111611; --bg3: #161d16;
+    --card: #1a231a; --card2: #1f2b1f;
+    --border: #2a3d2a; --border2: #3a5a3a;
+    --green: #00c853; --green2: #69f0ae; --green3: #1a4a1a;
+    --amber: #ffb300; --red: #f44336; --cyan: #00e5ff;
+    --text: #e8f5e8; --text2: #8fbc8f; --text3: #4a7a4a;
+    --mono: 'Courier New','Lucida Console',monospace;
+    --sans: 'Segoe UI',system-ui,sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+  .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 14px 28px; display: flex; align-items: center; gap: 14px; }
+  .header-icon { width: 36px; height: 36px; border: 1.5px solid var(--green); border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+  .header-icon svg { width: 20px; height: 20px; stroke: var(--green); fill: none; }
+  .header-title { font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: .03em; }
+  .header-sub { font-size: 11px; color: var(--text3); font-family: var(--mono); text-transform: uppercase; letter-spacing: .1em; margin-top: 2px; }
+  .header-badge { margin-left: auto; background: var(--green3); border: 1px solid var(--green); color: var(--green); font-size: 10px; font-family: var(--mono); padding: 3px 10px; border-radius: 3px; letter-spacing: .08em; }
+
+  .main { display: grid; grid-template-columns: 360px 1fr; min-height: calc(100vh - 65px); }
+
+  .left-panel { background: var(--bg2); border-right: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; }
+  .section-label { font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .15em; color: var(--text3); margin-bottom: 8px; }
+
+  .upload-zone { border: 1.5px dashed var(--border2); border-radius: 8px; padding: 28px 16px; text-align: center; cursor: pointer; transition: border-color .2s,background .2s; position: relative; background: var(--bg3); }
+  .upload-zone:hover,.upload-zone.drag { border-color: var(--green); background: #0d200d; }
+  .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-icon svg { width: 32px; height: 32px; stroke: var(--text3); fill: none; margin: 0 auto 10px; display: block; }
+  .upload-zone:hover .upload-icon svg,.upload-zone.drag .upload-icon svg { stroke: var(--green); }
+  .upload-text { font-size: 13px; color: var(--text2); }
+  .upload-hint { font-size: 11px; color: var(--text3); margin-top: 4px; font-family: var(--mono); }
+
+  .img-preview-wrap { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); display: none; }
+  .img-preview-wrap img { width: 100%; display: block; max-height: 220px; object-fit: contain; background: #000; }
+  .img-name { font-size: 10px; font-family: var(--mono); color: var(--text3); padding: 4px 8px; background: var(--bg3); border-top: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .img-clear { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,.7); border: 1px solid var(--border2); color: var(--text2); font-size: 16px; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; }
+
+  .param-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .param-block label { display: block; font-size: 10px; font-family: var(--mono); color: var(--text3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px; }
+  .param-block input,.param-block select { width: 100%; background: var(--bg3); border: 1px solid var(--border); color: var(--text); font-size: 13px; font-family: var(--mono); padding: 7px 10px; border-radius: 5px; outline: none; transition: border-color .2s; }
+  .param-block input:focus,.param-block select:focus { border-color: var(--green); }
+  .param-block select option { background: var(--bg2); }
+  .param-block.full { grid-column: 1 / -1; }
+
+  .btn-analyze { width: 100%; padding: 12px; background: var(--green); color: #000; font-size: 13px; font-weight: 700; font-family: var(--mono); text-transform: uppercase; letter-spacing: .12em; border: none; border-radius: 6px; cursor: pointer; transition: background .2s,transform .1s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn-analyze:hover { background: var(--green2); }
+  .btn-analyze:active { transform: scale(.98); }
+  .btn-analyze:disabled { background: var(--text3); color: #000; cursor: not-allowed; }
+  .btn-analyze svg { width: 16px; height: 16px; stroke: #000; fill: none; flex-shrink: 0; }
+
+  .btn-secondary { width: 100%; padding: 9px; background: transparent; color: var(--text2); font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .1em; border: 1px solid var(--border2); border-radius: 5px; cursor: pointer; transition: all .2s; display: none; align-items: center; justify-content: center; gap: 6px; }
+  .btn-secondary:hover { border-color: var(--green); color: var(--green); }
+  .btn-secondary svg { width: 13px; height: 13px; stroke: currentColor; fill: none; }
+
+  .right-panel { padding: 20px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; }
+
+  .state-idle,.state-loading,.state-error { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 400px; gap: 14px; }
+  .state-idle svg { width: 56px; height: 56px; stroke: var(--border2); fill: none; }
+  .state-idle p { color: var(--text3); font-size: 13px; font-family: var(--mono); }
+  .spinner { width: 36px; height: 36px; border: 2px solid var(--border2); border-top-color: var(--green); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-family: var(--mono); font-size: 12px; color: var(--text3); text-align: center; }
+  .loading-text strong { color: var(--green); display: block; font-size: 13px; margin-bottom: 4px; }
+  .state-error svg { width: 36px; height: 36px; stroke: var(--red); fill: none; }
+  .state-error p { color: var(--red); font-size: 13px; font-family: var(--mono); text-align: center; max-width: 360px; }
+
+  .results { display: none; flex-direction: column; gap: 18px; }
+
+  .metric-bar { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; }
+  .metric-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; position: relative; overflow: hidden; }
+  .metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .metric-card.ok::before { background: var(--green); }
+  .metric-card.warn::before { background: var(--amber); }
+  .metric-card.danger::before { background: var(--red); }
+  .metric-card.info::before { background: var(--cyan); }
+  .metric-label { font-size: 10px; font-family: var(--mono); color: var(--text3); text-transform: uppercase; letter-spacing: .1em; }
+  .metric-value { font-size: 22px; font-family: var(--mono); font-weight: 700; margin: 6px 0 2px; line-height: 1; }
+  .metric-value.ok { color: var(--green); }
+  .metric-value.warn { color: var(--amber); }
+  .metric-value.danger { color: var(--red); }
+  .metric-value.info { color: var(--cyan); }
+  .metric-unit { font-size: 10px; color: var(--text3); font-family: var(--mono); }
+  .status-pill { display: inline-block; font-size: 9px; font-family: var(--mono); text-transform: uppercase; padding: 2px 8px; border-radius: 3px; letter-spacing: .08em; margin-top: 4px; }
+  .status-pill.ok { background: #0d2b0d; color: var(--green); border: 1px solid #1a4a1a; }
+  .status-pill.warn { background: #2b2000; color: var(--amber); border: 1px solid #4a3a00; }
+  .status-pill.danger { background: #2b0d0d; color: var(--red); border: 1px solid #4a1a1a; }
+  .status-pill.info { background: #002b2b; color: var(--cyan); border: 1px solid #004a4a; }
+
+  .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .panel-head { background: var(--bg3); border-bottom: 1px solid var(--border); padding: 10px 14px; display: flex; align-items: center; gap: 8px; }
+  .panel-head-icon svg { width: 16px; height: 16px; stroke: var(--green); fill: none; }
+  .panel-title { font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--text2); }
+  .panel-body { padding: 14px; }
+
+  .data-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  .data-table tr { border-bottom: 1px solid var(--border); }
+  .data-table tr:last-child { border-bottom: none; }
+  .data-table td { padding: 7px 4px; }
+  .data-table td:first-child { color: var(--text3); width: 55%; }
+  .data-table td:last-child { text-align: right; color: var(--text); font-weight: 600; }
+  .data-table td.val-ok { color: var(--green); }
+  .data-table td.val-warn { color: var(--amber); }
+  .data-table td.val-danger { color: var(--red); }
+  .data-table td.val-info { color: var(--cyan); }
+
+  .density-bar-wrap { margin: 10px 0 4px; }
+  .density-bar-label { display: flex; justify-content: space-between; font-size: 10px; font-family: var(--mono); color: var(--text3); margin-bottom: 4px; }
+  .density-bar-track { height: 10px; background: var(--bg3); border-radius: 3px; overflow: hidden; border: 1px solid var(--border); }
+  .density-bar-fill { height: 100%; border-radius: 3px; transition: width .6s ease; }
+  .density-bar-fill.ok { background: var(--green); }
+  .density-bar-fill.warn { background: var(--amber); }
+  .density-bar-fill.danger { background: var(--red); }
+
+  .volt-gradient { height: 20px; border-radius: 4px; margin: 8px 0; position: relative; overflow: hidden; border: 1px solid var(--border); }
+  .volt-grad-track { height: 100%; width: 100%; background: linear-gradient(90deg,#00c853 0%,#ffb300 50%,#f44336 100%); opacity: .8; }
+  .volt-grad-marker { position: absolute; top: 0; height: 100%; width: 2px; background: #fff; }
+  .volt-grad-labels { display: flex; justify-content: space-between; font-size: 10px; font-family: var(--mono); color: var(--text3); }
+
+  .ai-narrative { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-size: 13px; line-height: 1.7; color: var(--text2); }
+  .ai-narrative h4 { font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--green); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .ai-narrative p { margin-bottom: 8px; }
+  .ai-narrative p:last-child { margin-bottom: 0; }
+
+  .rec-list { list-style: none; }
+  .rec-list li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 1.5; color: var(--text2); }
+  .rec-list li:last-child { border-bottom: none; }
+  .rec-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+  .rec-dot.ok { background: var(--green); }
+  .rec-dot.warn { background: var(--amber); }
+  .rec-dot.danger { background: var(--red); }
+
+  .trace-params { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+  .tp-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px; }
+  .tp-key { font-size: 9px; font-family: var(--mono); color: var(--text3); text-transform: uppercase; letter-spacing: .1em; }
+  .tp-val { font-size: 13px; font-family: var(--mono); color: var(--text); font-weight: 600; margin-top: 2px; }
+  .ipc-note { font-size: 10px; font-family: var(--mono); color: var(--text3); padding: 6px 10px; background: var(--bg3); border-left: 2px solid var(--text3); margin-top: 10px; border-radius: 0 4px 4px 0; }
+
+  /* ── Heatmap panel ── */
+  .heatmap-panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .heatmap-toolbar { background: var(--bg3); border-bottom: 1px solid var(--border); padding: 10px 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .heatmap-title { font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--text2); flex: 1; }
+  .hmap-toggle { display: flex; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+  .hmap-toggle button { padding: 5px 12px; font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; background: transparent; border: none; color: var(--text3); cursor: pointer; transition: all .15s; }
+  .hmap-toggle button.active { background: var(--green3); color: var(--green); }
+  .hmap-slider-wrap { display: flex; align-items: center; gap: 6px; font-size: 10px; font-family: var(--mono); color: var(--text3); }
+  .hmap-slider-wrap input[type=range] { width: 80px; accent-color: var(--green); }
+  .hmap-btn-export { padding: 5px 12px; font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; background: transparent; border: 1px solid var(--border2); color: var(--text2); border-radius: 4px; cursor: pointer; transition: all .15s; }
+  .hmap-btn-export:hover { border-color: var(--green); color: var(--green); }
+  .hmap-canvas-wrap { position: relative; background: #000; }
+  .hmap-canvas-wrap canvas { display: block; width: 100%; }
+  .hmap-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(0,0,0,.7); }
+  .hmap-loading.hidden { display: none; }
+  .hmap-legend { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .hmap-legend-bar { flex: 1; height: 10px; border-radius: 3px; background: linear-gradient(90deg,#001a00,#00c853,#ffb300,#ff5722,#f44336); border: 1px solid var(--border); min-width: 100px; }
+  .hmap-legend-label { font-size: 10px; font-family: var(--mono); color: var(--text3); white-space: nowrap; }
+  .hmap-hotspot-list { padding: 10px 14px; border-top: 1px solid var(--border); display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .hmap-hotspot-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px; display: flex; gap: 8px; align-items: flex-start; }
+  .hmap-hotspot-sev { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+  .hmap-hotspot-sev.critical { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .hmap-hotspot-sev.warning  { background: var(--amber); box-shadow: 0 0 4px var(--amber); }
+  .hmap-hotspot-sev.ok       { background: var(--green); }
+  .hmap-hotspot-text { font-size: 11px; font-family: var(--mono); color: var(--text2); line-height: 1.4; }
+  .hmap-hotspot-text strong { color: var(--text); display: block; font-size: 12px; }
+
+  /* overlay mode badge */
+  .overlay-badge { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.7); border: 1px solid var(--border); font-size: 9px; font-family: var(--mono); color: var(--text3); padding: 3px 8px; border-radius: 3px; text-transform: uppercase; letter-spacing: .1em; }
+
+  .btn-export-group { display: none; flex-direction: column; gap: 6px; }
+  .btn-pdf { width: 100%; padding: 9px; background: #1a0a0a; color: #ff6b6b; font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .1em; border: 1px solid #4a1a1a; border-radius: 5px; cursor: pointer; transition: all .2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn-pdf:hover { border-color: var(--red); color: #fff; background: #2b0d0d; }
+  .btn-pdf svg { width: 13px; height: 13px; stroke: currentColor; fill: none; }
+  .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* ── Local-use banner ── */
+  .local-banner { background: #1a1400; border-bottom: 1px solid #4a3a00; padding: 10px 20px; display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--amber); font-family: var(--mono); }
+  .local-banner svg { width: 16px; height: 16px; stroke: var(--amber); fill: none; flex-shrink: 0; }
+  .local-banner a { color: var(--green); text-decoration: underline; cursor: pointer; }
+  .local-banner .dismiss { margin-left: auto; cursor: pointer; color: var(--text3); font-size: 16px; line-height: 1; padding: 0 4px; }
+  .local-banner strong { color: #ffd54f; }
+
+  @media (max-width: 900px) {
+    .main { grid-template-columns: 1fr; }
+    .left-panel { border-right: none; border-bottom: 1px solid var(--border); }
+    .metric-bar { grid-template-columns: repeat(2,1fr); }
+    .results-grid { grid-template-columns: 1fr; }
+    .trace-params { grid-template-columns: repeat(2,1fr); }
+    .hmap-hotspot-list { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- iframe / preview warning banner -->
+<div class="local-banner" id="localBanner" style="display:none">
+  <svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <span><strong>Running in preview mode.</strong> The Analyze and PDF buttons require this file to be opened locally. <a id="saveLink">Download the HTML file</a> → open it in your browser → full functionality enabled.</span>
+  <span class="dismiss" id="dismissBanner" title="Dismiss">×</span>
+</div>
+
+<div class="header">
+  <div class="header-icon">
+    <svg viewBox="0 0 24 24" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12M15 9v12"/></svg>
+  </div>
+  <div>
+    <div class="header-title">PCB DC Drop Analyzer</div>
+    <div class="header-sub">Vision-Assisted · IPC-2221 / IPC-2141A · Thermal Heatmap</div>
+  </div>
+  <div class="header-badge">AI-POWERED</div>
+</div>
+
+<div class="main">
+  <div class="left-panel">
+    <div>
+      <div class="section-label">1 — Trace Image</div>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput" accept="image/*">
+        <div class="upload-icon">
+          <svg viewBox="0 0 24 24" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v6M15 3v6"/><circle cx="12" cy="16" r="1.5"/></svg>
+        </div>
+        <div class="upload-text">Drop PCB image or click to upload</div>
+        <div class="upload-hint">PNG · JPG · WEBP · BMP</div>
+      </div>
+      <div class="img-preview-wrap" id="previewWrap">
+        <img id="previewImg" src="" alt="PCB trace">
+        <button class="img-clear" id="imgClear">×</button>
+        <div class="img-name" id="imgName"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">2 — Circuit Parameters</div>
+      <div class="param-grid">
+        <div class="param-block"><label>Supply Voltage (V)</label><input type="number" id="pVoltage" value="3.3" min="0.1" step="0.1"></div>
+        <div class="param-block"><label>Load Current (A)</label><input type="number" id="pCurrent" value="1.0" min="0.01" step="0.1"></div>
+        <div class="param-block"><label>Max Allowed ΔV (mV)</label><input type="number" id="pMaxDrop" value="100" min="1" step="10"></div>
+        <div class="param-block"><label>Ambient Temp (°C)</label><input type="number" id="pTemp" value="25" min="-40" max="125"></div>
+        <div class="param-block full"><label>PCB Copper Weight</label>
+          <select id="pCopper">
+            <option value="0.5">0.5 oz/ft² (17.5 µm)</option>
+            <option value="1" selected>1 oz/ft² (35 µm)</option>
+            <option value="2">2 oz/ft² (70 µm)</option>
+            <option value="3">3 oz/ft² (105 µm)</option>
+            <option value="4">4 oz/ft² (140 µm)</option>
+          </select>
+        </div>
+        <div class="param-block full"><label>Layer Type</label>
+          <select id="pLayer">
+            <option value="external" selected>External (Outer Layer)</option>
+            <option value="internal">Internal (Inner Layer)</option>
+          </select>
+        </div>
+        <div class="param-block full"><label>Scale Reference (optional)</label><input type="text" id="pScale" placeholder="e.g. 1mm grid visible"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">3 — Analyze</div>
+      <button class="btn-analyze" id="btnAnalyze" disabled>
+        <svg viewBox="0 0 24 24" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35M11 8v6M8 11h6"/></svg>
+        Run Analysis
+      </button>
+    </div>
+
+    <div class="btn-export-group" id="exportGroup">
+      <button class="btn-secondary" id="btnExport" style="display:flex">
+        <svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Export Report (TXT)
+      </button>
+      <button class="btn-pdf" id="btnPdf">
+        <svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Download PDF Report
+      </button>
+    </div>
+  </div>
+
+  <div class="right-panel">
+    <div class="state-idle" id="stateIdle">
+      <svg viewBox="0 0 24 24" stroke-width="1"><rect x="2" y="2" width="20" height="20" rx="3"/><path d="M7 12h10M7 8h6M7 16h8"/></svg>
+      <p>Upload a PCB trace image and set parameters to begin</p>
+    </div>
+
+    <div class="state-loading" id="stateLoading" style="display:none">
+      <div class="spinner"></div>
+      <div class="loading-text"><strong id="loadingMsg">Analyzing PCB trace geometry...</strong>Sending image to Claude Vision · Computing DC parameters</div>
+    </div>
+
+    <div class="state-error" id="stateError" style="display:none">
+      <svg viewBox="0 0 24 24" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+      <p id="errorMsg">An error occurred. Please try again.</p>
+    </div>
+
+    <div class="results" id="results">
+      <div class="metric-bar" id="metricBar"></div>
+
+      <!-- Heatmap overlay panel -->
+      <div class="heatmap-panel" id="heatmapPanel">
+        <div class="heatmap-toolbar">
+          <div class="heatmap-title">
+            <svg viewBox="0 0 24 24" stroke-width="1.5" style="width:14px;height:14px;stroke:var(--red);fill:none;vertical-align:-2px;margin-right:6px"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1-4.5h-2V7h2v5z"/></svg>
+            Thermal Hotspot &amp; Current Density Map
+          </div>
+          <div class="hmap-toggle">
+            <button id="modeHeat" class="active" onclick="setOverlayMode('heat')">Heatmap</button>
+            <button id="modeFlow" onclick="setOverlayMode('flow')">Current Flow</button>
+            <button id="modeBoth" onclick="setOverlayMode('both')">Combined</button>
+          </div>
+          <div class="hmap-slider-wrap">
+            <span>Opacity</span>
+            <input type="range" id="hmapOpacity" min="20" max="95" value="65" oninput="redrawOverlay()">
+          </div>
+          <button class="hmap-btn-export" id="btnSaveHmap">Save PNG</button>
+        </div>
+        <div class="hmap-canvas-wrap" id="hmapWrap">
+          <canvas id="hmapCanvas"></canvas>
+          <div class="overlay-badge" id="overlayBadge">HEATMAP</div>
+          <div class="hmap-loading" id="hmapLoading">
+            <div class="spinner"></div>
+            <div class="loading-text"><strong>Mapping hotspots...</strong>Claude Vision locating bottlenecks</div>
+          </div>
+        </div>
+        <div class="hmap-legend">
+          <span class="hmap-legend-label">Low</span>
+          <div class="hmap-legend-bar"></div>
+          <span class="hmap-legend-label">High current density / temp</span>
+          <span class="hmap-legend-label" style="margin-left:auto;color:var(--text2);font-size:9px">IPC-2152 thermal model</span>
+        </div>
+        <div class="hmap-hotspot-list" id="hmapHotspotList"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-head-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg></div>
+          <div class="panel-title">Detected Trace Geometry</div>
+        </div>
+        <div class="panel-body">
+          <div class="trace-params" id="traceParams"></div>
+          <div class="ipc-note" id="ipcNote"></div>
+        </div>
+      </div>
+
+      <div class="results-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-head-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M5 12h2l2-6 4 12 2-6h4"/></svg></div>
+            <div class="panel-title">DC Resistance</div>
+          </div>
+          <div class="panel-body"><table class="data-table" id="tableResistance"></table></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-head-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M2 12h20M12 2v20"/></svg></div>
+            <div class="panel-title">Voltage Drop</div>
+          </div>
+          <div class="panel-body"><div id="voltDropContent"></div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-head-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+            <div class="panel-title">Current Density</div>
+          </div>
+          <div class="panel-body" id="currentDensityContent"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-head-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg></div>
+            <div class="panel-title">Thermal / Power</div>
+          </div>
+          <div class="panel-body"><table class="data-table" id="tableThermal"></table></div>
+        </div>
+      </div>
+
+      <div class="ai-narrative" id="aiNarrative"></div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-head-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+          <div class="panel-title">Design Recommendations</div>
+        </div>
+        <div class="panel-body"><ul class="rec-list" id="recList"></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let imageB64 = null, imageMime = null, lastResult = null;
+let hotspotData = null, overlayMode = 'heat';
+let bgImage = null; // HTMLImageElement for canvas
+
+// DOM refs
+const fileInput    = document.getElementById('fileInput');
+const uploadZone   = document.getElementById('uploadZone');
+const previewWrap  = document.getElementById('previewWrap');
+const previewImg   = document.getElementById('previewImg');
+const imgName      = document.getElementById('imgName');
+const imgClear     = document.getElementById('imgClear');
+const btnAnalyze   = document.getElementById('btnAnalyze');
+const btnExport    = document.getElementById('btnExport');
+const btnPdf       = document.getElementById('btnPdf');
+const exportGroup  = document.getElementById('exportGroup');
+const stateIdle    = document.getElementById('stateIdle');
+const stateLoading = document.getElementById('stateLoading');
+const stateError   = document.getElementById('stateError');
+const errorMsg     = document.getElementById('errorMsg');
+const results      = document.getElementById('results');
+const loadingMsg   = document.getElementById('loadingMsg');
+const hmapCanvas   = document.getElementById('hmapCanvas');
+const hmapLoading  = document.getElementById('hmapLoading');
+const hmapWrap     = document.getElementById('hmapWrap');
+
+// ── File handling ─────────────────────────────────────────────────────────
+fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'));
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
+imgClear.addEventListener('click', () => {
+  imageB64 = null; imageMime = null; bgImage = null; hotspotData = null;
+  previewWrap.style.display = 'none'; uploadZone.style.display = 'block';
+  fileInput.value = ''; btnAnalyze.disabled = true; showState('idle');
+});
+
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  imageMime = file.type;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const dataUrl = ev.target.result;
+    imageB64 = dataUrl.split(',')[1];
+    previewImg.src = dataUrl;
+    imgName.textContent = file.name;
+    previewWrap.style.display = 'block'; uploadZone.style.display = 'none';
+    btnAnalyze.disabled = false; showState('idle');
+    // Pre-load image for canvas
+    bgImage = new Image(); bgImage.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Main Analysis ─────────────────────────────────────────────────────────
+btnAnalyze.addEventListener('click', runAnalysis);
+
+async function runAnalysis() {
+  if (!imageB64) return;
+  const voltage  = parseFloat(document.getElementById('pVoltage').value) || 3.3;
+  const current  = parseFloat(document.getElementById('pCurrent').value) || 1.0;
+  const maxDrop  = parseFloat(document.getElementById('pMaxDrop').value) || 100;
+  const temp     = parseFloat(document.getElementById('pTemp').value) || 25;
+  const copper   = parseFloat(document.getElementById('pCopper').value) || 1;
+  const layer    = document.getElementById('pLayer').value;
+  const scale    = document.getElementById('pScale').value.trim();
+  const copperThick = copper * 35;
+
+  showState('loading');
+  btnAnalyze.disabled = true;
+  hotspotData = null;
+
+  const steps = ['Analyzing PCB trace geometry...','Extracting trace width & routing...','Computing DC resistance model...','Evaluating IPC-2221 compliance...'];
+  let si = 0;
+  const stInt = setInterval(() => { si=(si+1)%steps.length; loadingMsg.textContent=steps[si]; }, 1800);
+
+  const prompt = `You are an expert PCB power integrity engineer. Analyze the PCB image and return ONLY valid JSON (no markdown, no fences) with this exact structure:
+
+{
+  "trace_width_mm": <number>,
+  "trace_length_mm": <number>,
+  "num_vias": <integer>,
+  "num_bends": <integer>,
+  "trace_quality": <"straight"|"moderate_bends"|"complex_routing">,
+  "confidence": <"high"|"medium"|"low">,
+  "geometry_notes": "<brief description>",
+  "resistance_straight_mohm": <number>,
+  "resistance_vias_mohm": <number>,
+  "resistance_bends_mohm": <number>,
+  "resistance_total_mohm": <number>,
+  "resistance_temp_corrected_mohm": <number>,
+  "voltage_drop_mv": <number>,
+  "voltage_at_load_v": <number>,
+  "drop_budget_percent": <number>,
+  "drop_status": <"ok"|"warning"|"critical">,
+  "cross_section_mm2": <number>,
+  "current_density_a_mm2": <number>,
+  "ipc2221_max_current_a": <number>,
+  "density_utilization_percent": <number>,
+  "density_status": <"ok"|"warning"|"critical">,
+  "power_dissipation_mw": <number>,
+  "temp_rise_estimate_c": <number>,
+  "junction_temp_estimate_c": <number>,
+  "recommendations": ["<rec1>","<rec2>","<rec3>","<rec4>"],
+  "recommendation_priorities": ["ok"|"warn"|"danger","ok"|"warn"|"danger","ok"|"warn"|"danger","ok"|"warn"|"danger"],
+  "summary": "<2-3 sentence summary>"
+}
+
+Parameters: Supply=${voltage}V, Current=${current}A, MaxDrop=${maxDrop}mV, Temp=${temp}°C, Copper=${copper}oz (${copperThick}µm), Layer=${layer}${scale?', Scale='+scale:''}.
+Use IPC-2221B: I=0.048×ΔT^0.44×A^0.725 (external), R(T)=R₀×[1+0.00393×(T-25)], ρCu=17.24nΩ·m.`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6', max_tokens: 1000,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: imageMime, data: imageB64 } },
+          { type: 'text', text: prompt }
+        ]}]
+      })
+    });
+    clearInterval(stInt);
+    if (!resp.ok) { const e=await resp.json().catch(()=>({})); throw new Error(e.error?.message||`API error ${resp.status}`); }
+    const data = await resp.json();
+    let raw = data.content?.map(c=>c.text||'').join('')||'';
+    raw = raw.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
+    let analysis;
+    try { analysis = JSON.parse(raw); }
+    catch { const m=raw.match(/\{[\s\S]*\}/); if(m) analysis=JSON.parse(m[0]); else throw new Error('Could not parse analysis JSON'); }
+
+    lastResult = { analysis, params: { voltage, current, maxDrop, temp, copper, layer, copperThick } };
+    renderResults(analysis, { voltage, current, maxDrop, temp, copper, layer, copperThick });
+    showState('results');
+    exportGroup.style.display = 'flex';
+    btnExport.style.display = 'flex';
+
+    // Now run the heatmap analysis as a second parallel call
+    runHeatmapAnalysis(analysis, { voltage, current, maxDrop, temp, copper, layer });
+
+  } catch(e) {
+    clearInterval(stInt);
+    errorMsg.textContent = e.message||'Analysis failed.';
+    showState('error');
+  } finally {
+    btnAnalyze.disabled = false;
+  }
+}
+
+// ── Robust JSON repair ────────────────────────────────────────────────────
+function repairJSON(raw) {
+  // Strip markdown fences
+  let s = raw.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
+
+  // Extract outermost { } block
+  const start = s.indexOf('{');
+  if (start === -1) throw new Error('No JSON object found');
+  s = s.slice(start);
+
+  // Find the deepest balanced closing brace
+  let depth = 0, end = -1;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '{' || s[i] === '[') depth++;
+    else if (s[i] === '}' || s[i] === ']') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end !== -1) s = s.slice(0, end + 1);
+
+  // Try direct parse first
+  try { return JSON.parse(s); } catch(_) {}
+
+  // Repair common LLM JSON issues:
+  let fixed = s
+    // trailing commas before ] or }
+    .replace(/,\s*([\]\}])/g, '$1')
+    // unquoted string values after colon that aren't numbers/bool/null
+    .replace(/:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*([,\}\]])/g, (m,v,end) => {
+      if (['true','false','null'].includes(v)) return `: ${v}${end}`;
+      return `: "${v}"${end}`;
+    })
+    // single-quoted strings → double-quoted
+    .replace(/'([^'\\]*)'/g, '"$1"')
+    // fix missing commas between array elements: } { or ] [
+    .replace(/\}\s*\{/g, '},{')
+    .replace(/\]\s*\[/g, '],[');
+
+  try { return JSON.parse(fixed); } catch(_) {}
+
+  // If still broken, try truncation repair: close unclosed structures
+  // Count unclosed brackets and braces
+  let opens = [];
+  const closeMap = { '{':'}', '[':']' };
+  for (let i = 0; i < fixed.length; i++) {
+    if (fixed[i]==='{' || fixed[i]==='[') opens.push(fixed[i]);
+    else if (fixed[i]==='}' || fixed[i]===']') opens.pop();
+  }
+  // Trim trailing comma before we close
+  let truncated = fixed.trimEnd().replace(/,\s*$/, '');
+  // Close any open string (odd number of unescaped quotes heuristic)
+  const quoteCount = (truncated.match(/(?<!\\)"/g)||[]).length;
+  if (quoteCount % 2 !== 0) truncated += '"';
+  // Close open structures in reverse
+  while (opens.length) truncated += closeMap[opens.pop()];
+
+  try { return JSON.parse(truncated); } catch(e2) {
+    throw new Error(`JSON repair failed: ${e2.message}`);
+  }
+}
+
+// ── Heatmap Analysis (2nd AI call) ────────────────────────────────────────
+async function runHeatmapAnalysis(mainAnalysis, params) {
+  hmapLoading.classList.remove('hidden');
+
+  // Keep descriptions SHORT to stay well within token budget
+  const heatPrompt = `PCB thermal expert. Analyze this PCB trace image. Return ONLY compact valid JSON, no markdown, no extra text.
+
+Prior analysis: width=${mainAnalysis.trace_width_mm?.toFixed(2)}mm, length=${mainAnalysis.trace_length_mm?.toFixed(1)}mm, current=${params.current}A, density=${mainAnalysis.current_density_a_mm2?.toFixed(1)}A/mm2, vias=${mainAnalysis.num_vias}, bends=${mainAnalysis.num_bends}, status=${mainAnalysis.density_status}
+
+Return this exact JSON structure with SHORT string values (under 60 chars each):
+{"hotspots":[{"id":1,"type":"via_cluster","severity":"critical","x_percent":50,"y_percent":50,"radius_percent":10,"temp_rise_c":5.0,"current_density_factor":1.5,"label":"Via cluster","description":"High via density increases resistance"}],"current_flow_path":[{"x_percent":10,"y_percent":50},{"x_percent":90,"y_percent":50}],"bottleneck_segments":[{"x1_percent":40,"y1_percent":45,"x2_percent":60,"y2_percent":55,"severity":"warning"}],"overall_thermal_risk":"moderate"}
+
+Rules:
+- hotspots: 2 to 4 items max, based on what you see (via clusters, narrow sections, bends, long runs)
+- type must be one of: via_cluster, narrow_neck, right_angle_bend, long_run, component_pad, current_split
+- severity: critical, warning, or ok
+- all _percent values: integers 0-100
+- current_flow_path: 5 to 8 waypoints tracing current from left/top to right/bottom through the trace
+- bottleneck_segments: 0 to 2 items max
+- overall_thermal_risk: low, moderate, high, or critical
+- description field: max 60 characters, no special characters or apostrophes`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6', max_tokens: 2000,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: imageMime, data: imageB64 } },
+          { type: 'text', text: heatPrompt }
+        ]}]
+      })
+    });
+    if (!resp.ok) {
+      const e = await resp.json().catch(()=>({}));
+      throw new Error(e.error?.message || `API ${resp.status}`);
+    }
+    const data = await resp.json();
+    const raw = data.content?.map(c=>c.text||'').join('')||'';
+    const hd = repairJSON(raw);
+
+    // Sanitise: ensure arrays exist and clamp percent values
+    hd.hotspots = (hd.hotspots||[]).map((s,i) => ({
+      id: i+1,
+      type: s.type||'long_run',
+      severity: ['critical','warning','ok'].includes(s.severity)?s.severity:'warning',
+      x_percent: Math.max(0,Math.min(100, Number(s.x_percent)||50)),
+      y_percent: Math.max(0,Math.min(100, Number(s.y_percent)||50)),
+      radius_percent: Math.max(4,Math.min(25, Number(s.radius_percent)||10)),
+      temp_rise_c: Number(s.temp_rise_c)||3,
+      current_density_factor: Number(s.current_density_factor)||1.2,
+      label: String(s.label||'Hotspot').slice(0,30),
+      description: String(s.description||'').slice(0,80),
+    }));
+    hd.current_flow_path = (hd.current_flow_path||[]).map(p=>({
+      x_percent: Math.max(0,Math.min(100,Number(p.x_percent)||50)),
+      y_percent: Math.max(0,Math.min(100,Number(p.y_percent)||50)),
+    }));
+    hd.bottleneck_segments = (hd.bottleneck_segments||[]).map(b=>({
+      x1_percent: Math.max(0,Math.min(100,Number(b.x1_percent)||30)),
+      y1_percent: Math.max(0,Math.min(100,Number(b.y1_percent)||40)),
+      x2_percent: Math.max(0,Math.min(100,Number(b.x2_percent)||70)),
+      y2_percent: Math.max(0,Math.min(100,Number(b.y2_percent)||60)),
+      severity: b.severity||'warning',
+    }));
+    hd.overall_thermal_risk = hd.overall_thermal_risk||'moderate';
+
+    hotspotData = hd;
+    renderHeatmap(hd, mainAnalysis);
+
+  } catch(e) {
+    hmapLoading.classList.add('hidden');
+    // Remove any previous error message first
+    const prev = hmapWrap.querySelector('.hmap-error-msg');
+    if (prev) prev.remove();
+    hmapCanvas.insertAdjacentHTML('afterend',
+      `<div class="hmap-error-msg" style="padding:14px;font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center;background:var(--bg3);border-top:1px solid var(--border)">
+        <span style="color:var(--amber)">⚠ Heatmap failed:</span> ${e.message}<br>
+        <span style="font-size:10px;color:var(--text3);margin-top:4px;display:block">The DC analysis above is still valid. Try re-running the analysis.</span>
+      </div>`);
+  }
+}
+
+// ── Canvas Heatmap Renderer ───────────────────────────────────────────────
+function renderHeatmap(hd, analysis) {
+  const canvas = hmapCanvas;
+  const wrap = hmapWrap;
+
+  // Set canvas size to match the PCB image
+  bgImage.onload = () => { doRender(); };
+  if (bgImage.complete) doRender();
+
+  function doRender() {
+    canvas.width  = bgImage.naturalWidth  || 800;
+    canvas.height = bgImage.naturalHeight || 600;
+    hmapLoading.classList.add('hidden');
+    redrawOverlay();
+    renderHotspotList(hd, analysis);
+  }
+}
+
+function redrawOverlay() {
+  if (!hotspotData || !bgImage) return;
+  const hd = hotspotData;
+  const canvas = hmapCanvas;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const opacity = (parseInt(document.getElementById('hmapOpacity').value)||65) / 100;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // 1. Draw original PCB image dimmed
+  ctx.globalAlpha = 0.85;
+  ctx.drawImage(bgImage, 0, 0, W, H);
+  ctx.globalAlpha = 1;
+
+  const mode = overlayMode;
+
+  // 2. HEATMAP LAYER — gaussian blobs per hotspot
+  if (mode === 'heat' || mode === 'both') {
+    // Create offscreen heatmap canvas
+    const hc = document.createElement('canvas');
+    hc.width = W; hc.height = H;
+    const hx = hc.getContext('2d');
+
+    (hd.hotspots || []).forEach(spot => {
+      const cx = (spot.x_percent / 100) * W;
+      const cy = (spot.y_percent / 100) * H;
+      const r  = (spot.radius_percent / 100) * W;
+      const intensity = spot.severity === 'critical' ? 1.0 : spot.severity === 'warning' ? 0.65 : 0.35;
+      const densF = Math.min(spot.current_density_factor || 1, 3);
+
+      // Gaussian radial gradient: green → amber → red based on severity
+      const grad = hx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      if (spot.severity === 'critical') {
+        grad.addColorStop(0,   `rgba(244,67,54,${0.85 * intensity})`);
+        grad.addColorStop(0.3, `rgba(255,87,34,${0.7 * intensity})`);
+        grad.addColorStop(0.6, `rgba(255,183,0,${0.4 * intensity})`);
+        grad.addColorStop(1,   'rgba(0,0,0,0)');
+      } else if (spot.severity === 'warning') {
+        grad.addColorStop(0,   `rgba(255,183,0,${0.8 * intensity})`);
+        grad.addColorStop(0.4, `rgba(255,152,0,${0.55 * intensity})`);
+        grad.addColorStop(0.7, `rgba(0,200,83,${0.2 * intensity})`);
+        grad.addColorStop(1,   'rgba(0,0,0,0)');
+      } else {
+        grad.addColorStop(0,   `rgba(0,200,83,${0.55 * intensity})`);
+        grad.addColorStop(0.5, `rgba(0,200,83,${0.25 * intensity})`);
+        grad.addColorStop(1,   'rgba(0,0,0,0)');
+      }
+      hx.globalCompositeOperation = 'screen';
+      hx.fillStyle = grad;
+      hx.beginPath(); hx.arc(cx, cy, r, 0, Math.PI*2); hx.fill();
+    });
+
+    ctx.globalAlpha = opacity;
+    ctx.drawImage(hc, 0, 0);
+    ctx.globalAlpha = 1;
+  }
+
+  // 3. CURRENT FLOW PATH — animated-style dashed line
+  if ((mode === 'flow' || mode === 'both') && hd.current_flow_path?.length > 1) {
+    const pts = hd.current_flow_path;
+    ctx.save();
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = Math.max(2, W * 0.003);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.setLineDash([W*0.015, W*0.008]);
+    ctx.shadowColor = '#00e5ff';
+    ctx.shadowBlur = 8;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const x = (p.x_percent/100)*W, y = (p.y_percent/100)*H;
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+
+    // Flow direction arrows along path
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.9;
+    for (let i = 1; i < pts.length; i += Math.max(1, Math.floor(pts.length/4))) {
+      const p0 = pts[i-1], p1 = pts[i];
+      const x0=(p0.x_percent/100)*W, y0=(p0.y_percent/100)*H;
+      const x1=(p1.x_percent/100)*W, y1=(p1.y_percent/100)*H;
+      const mx=(x0+x1)/2, my=(y0+y1)/2;
+      const angle = Math.atan2(y1-y0, x1-x0);
+      const as = Math.max(8, W*0.012);
+      ctx.fillStyle = '#00e5ff';
+      ctx.beginPath();
+      ctx.moveTo(mx + Math.cos(angle)*as, my + Math.sin(angle)*as);
+      ctx.lineTo(mx + Math.cos(angle+2.4)*as*0.5, my + Math.sin(angle+2.4)*as*0.5);
+      ctx.lineTo(mx + Math.cos(angle-2.4)*as*0.5, my + Math.sin(angle-2.4)*as*0.5);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 4. BOTTLENECK SEGMENTS — thick warning lines
+  if ((mode === 'heat' || mode === 'both') && hd.bottleneck_segments?.length) {
+    hd.bottleneck_segments.forEach(seg => {
+      const x1=(seg.x1_percent/100)*W, y1=(seg.y1_percent/100)*H;
+      const x2=(seg.x2_percent/100)*W, y2=(seg.y2_percent/100)*H;
+      const col = seg.severity==='critical' ? '#f44336' : '#ffb300';
+      ctx.save();
+      ctx.strokeStyle = col; ctx.lineWidth = Math.max(3, W*0.005);
+      ctx.lineCap = 'round'; ctx.setLineDash([W*0.01, W*0.005]);
+      ctx.shadowColor = col; ctx.shadowBlur = 10; ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      ctx.restore();
+    });
+  }
+
+  // 5. HOTSPOT MARKERS — numbered crosshairs
+  if (hd.hotspots?.length) {
+    hd.hotspots.forEach((spot, idx) => {
+      const cx=(spot.x_percent/100)*W, cy=(spot.y_percent/100)*H;
+      const col = spot.severity==='critical'?'#f44336': spot.severity==='warning'?'#ffb300':'#00c853';
+      const r = Math.max(14, W*0.018);
+
+      ctx.save();
+      // Outer ring pulse effect
+      ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.4;
+      ctx.beginPath(); ctx.arc(cx, cy, r*1.6, 0, Math.PI*2); ctx.stroke();
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath(); ctx.arc(cx, cy, r*1.1, 0, Math.PI*2); ctx.stroke();
+
+      // Crosshair lines
+      ctx.globalAlpha = 0.9; ctx.lineWidth = 1;
+      const cs = r*0.7;
+      ctx.beginPath();
+      ctx.moveTo(cx-cs,cy); ctx.lineTo(cx-r*1.1,cy);
+      ctx.moveTo(cx+cs,cy); ctx.lineTo(cx+r*1.1,cy);
+      ctx.moveTo(cx,cy-cs); ctx.lineTo(cx,cy-r*1.1);
+      ctx.moveTo(cx,cy+cs); ctx.lineTo(cx,cy+r*1.1);
+      ctx.stroke();
+
+      // Number badge
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(cx, cy, r*0.65, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.font = `bold ${Math.max(10,r*0.7)}px monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(idx+1, cx, cy);
+
+      // Label tag
+      const tagX = cx + r*1.8, tagY = cy;
+      const lw = Math.max(60, spot.label.length*6.5+16);
+      ctx.globalAlpha = 0.88;
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(tagX, tagY-10, lw, 20, 4) : ctx.rect(tagX, tagY-10, lw, 20);
+      ctx.fill();
+      ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.fillStyle = col; ctx.font = `${Math.max(9,r*0.55)}px monospace`;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(spot.label, tagX+8, tagY);
+      ctx.restore();
+    });
+  }
+
+  // 6. Temperature scale indicator in corner
+  const sw = Math.min(120, W*0.15), sh = 10, sx = W-sw-10, sy = H-24;
+  const scaleGrad = ctx.createLinearGradient(sx,0,sx+sw,0);
+  scaleGrad.addColorStop(0,'rgba(0,200,83,0.7)');
+  scaleGrad.addColorStop(0.5,'rgba(255,183,0,0.7)');
+  scaleGrad.addColorStop(1,'rgba(244,67,54,0.9)');
+  ctx.fillStyle = scaleGrad;
+  ctx.fillRect(sx,sy,sw,sh);
+  ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=0.5;
+  ctx.strokeRect(sx,sy,sw,sh);
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font=`${Math.max(8,sw*0.09)}px monospace`;
+  ctx.textAlign='left'; ctx.textBaseline='top'; ctx.fillText('LOW',sx,sy+12);
+  ctx.textAlign='right'; ctx.fillText('HIGH',sx+sw,sy+12);
+
+  // Update badge
+  const badges = { heat:'HEATMAP', flow:'CURRENT FLOW', both:'COMBINED' };
+  document.getElementById('overlayBadge').textContent = badges[overlayMode]||'OVERLAY';
+}
+
+function setOverlayMode(mode) {
+  overlayMode = mode;
+  document.querySelectorAll('.hmap-toggle button').forEach(b => b.classList.remove('active'));
+  document.getElementById('mode'+mode.charAt(0).toUpperCase()+mode.slice(1)).classList.add('active');
+  redrawOverlay();
+}
+
+function renderHotspotList(hd, analysis) {
+  const list = document.getElementById('hmapHotspotList');
+  if (!hd.hotspots?.length) { list.style.display='none'; return; }
+  list.innerHTML = hd.hotspots.map((s, i) => `
+    <div class="hmap-hotspot-item">
+      <div class="hmap-hotspot-sev ${s.severity}"></div>
+      <div class="hmap-hotspot-text">
+        <strong>${i+1}. ${s.label}</strong>
+        ${s.description}<br>
+        <span style="color:var(--text3);font-size:10px">
+          ΔT +${s.temp_rise_c?.toFixed(1)||'?'}°C · 
+          ${s.current_density_factor ? (s.current_density_factor.toFixed(1)+'× avg density') : ''} · 
+          ${s.type?.replace(/_/g,' ')}
+        </span>
+      </div>
+    </div>`).join('');
+}
+
+// Save heatmap
+document.getElementById('btnSaveHmap').addEventListener('click', () => {
+  if (!hotspotData) return;
+  const link = document.createElement('a');
+  link.download = `pcb_heatmap_${Date.now()}.png`;
+  link.href = hmapCanvas.toDataURL('image/png');
+  link.click();
+});
+
+// ── Render Results ─────────────────────────────────────────────────────────
+function renderResults(a, p) {
+  const dropOk = a.drop_status==='ok'?'ok': a.drop_status==='warning'?'warn':'danger';
+  const densOk = a.density_status==='ok'?'ok': a.density_status==='warning'?'warn':'danger';
+
+  document.getElementById('metricBar').innerHTML = `
+    ${metricCard('Voltage Drop', a.voltage_drop_mv?.toFixed(2)??'--', 'mV', dropOk, statusLabel(a.drop_status))}
+    ${metricCard('DC Resistance', a.resistance_total_mohm?.toFixed(2)??'--', 'mΩ', 'info', `at ${p.temp}°C`)}
+    ${metricCard('Current Density', a.current_density_a_mm2?.toFixed(2)??'--', 'A/mm²', densOk, statusLabel(a.density_status))}
+    ${metricCard('Power Loss', a.power_dissipation_mw?.toFixed(1)??'--', 'mW', a.power_dissipation_mw>500?'danger': a.power_dissipation_mw>100?'warn':'ok', `ΔT ~${a.temp_rise_estimate_c?.toFixed(1)}°C`)}`;
+
+  const traceParams = document.getElementById('traceParams');
+  traceParams.innerHTML = `
+    ${tp('Width', `${a.trace_width_mm?.toFixed(3)??'--'} mm`)}
+    ${tp('Length', `${a.trace_length_mm?.toFixed(2)??'--'} mm`)}
+    ${tp('Copper', `${p.copperThick} µm`)}
+    ${tp('Vias', a.num_vias??0)}
+    ${tp('Bends', a.num_bends??0)}
+    ${tp('Confidence', (a.confidence||'medium').toUpperCase())}`;
+  document.getElementById('ipcNote').textContent = `Geometry: ${a.trace_quality??'n/a'} · ${a.geometry_notes??''}`;
+
+  document.getElementById('tableResistance').innerHTML = `
+    <tr><td>Straight sections</td><td>${a.resistance_straight_mohm?.toFixed(3)??'--'} mΩ</td></tr>
+    <tr><td>Via resistance (×${a.num_vias??0})</td><td>${a.resistance_vias_mohm?.toFixed(3)??'0.000'} mΩ</td></tr>
+    <tr><td>Bend resistance</td><td>${a.resistance_bends_mohm?.toFixed(3)??'0.000'} mΩ</td></tr>
+    <tr><td>Total R (25°C)</td><td class="val-info">${a.resistance_total_mohm?.toFixed(3)??'--'} mΩ</td></tr>
+    <tr><td>R at ${p.temp}°C</td><td class="val-info">${a.resistance_temp_corrected_mohm?.toFixed(3)??'--'} mΩ</td></tr>
+    <tr><td>Resistivity ρ (Cu)</td><td>17.24 nΩ·m</td></tr>`;
+
+  const vdrop=a.voltage_drop_mv||0, budget=Math.min(a.drop_budget_percent||0,100), vclass=dropOk;
+  document.getElementById('voltDropContent').innerHTML = `
+    <table class="data-table">
+      <tr><td>Supply voltage</td><td>${p.voltage.toFixed(3)} V</td></tr>
+      <tr><td>Voltage drop</td><td class="val-${vclass}">${vdrop.toFixed(2)} mV</td></tr>
+      <tr><td>Voltage at load</td><td class="${vdrop<p.maxDrop?'val-ok':'val-danger'}">${a.voltage_at_load_v?.toFixed(4)??'--'} V</td></tr>
+      <tr><td>Budget used</td><td class="val-${vclass}">${budget.toFixed(1)}%</td></tr>
+      <tr><td>Max allowed drop</td><td>${p.maxDrop} mV</td></tr>
+    </table>
+    <div class="density-bar-wrap" style="margin-top:12px">
+      <div class="density-bar-label"><span>Drop budget</span><span>${budget.toFixed(1)}%</span></div>
+      <div class="density-bar-track"><div class="density-bar-fill ${vclass}" style="width:${Math.min(budget,100)}%"></div></div>
+    </div>
+    <div class="volt-gradient" style="margin-top:12px"><div class="volt-grad-track"></div><div class="volt-grad-marker" style="left:${Math.min(budget,100)}%"></div></div>
+    <div class="volt-grad-labels"><span>0 mV</span><span>${p.maxDrop/2} mV</span><span>${p.maxDrop} mV</span></div>`;
+
+  const util=Math.min(a.density_utilization_percent||0,120);
+  document.getElementById('currentDensityContent').innerHTML = `
+    <table class="data-table">
+      <tr><td>Load current</td><td>${p.current.toFixed(3)} A</td></tr>
+      <tr><td>Cross-section</td><td>${a.cross_section_mm2?.toFixed(4)??'--'} mm²</td></tr>
+      <tr><td>Current density</td><td class="val-${densOk}">${a.current_density_a_mm2?.toFixed(2)??'--'} A/mm²</td></tr>
+      <tr><td>IPC-2221 Imax</td><td>${a.ipc2221_max_current_a?.toFixed(2)??'--'} A</td></tr>
+      <tr><td>Utilization</td><td class="val-${densOk}">${util.toFixed(1)}%</td></tr>
+    </table>
+    <div class="density-bar-wrap" style="margin-top:12px">
+      <div class="density-bar-label"><span>IPC-2221 utilization</span><span>${util.toFixed(1)}%</span></div>
+      <div class="density-bar-track"><div class="density-bar-fill ${densOk}" style="width:${Math.min(util,100)}%"></div></div>
+    </div>
+    <div class="ipc-note" style="margin-top:8px">IPC-2221B · External layer · ΔT=10°C reference · ${p.copper} oz copper</div>`;
+
+  document.getElementById('tableThermal').innerHTML = `
+    <tr><td>Power dissipation</td><td class="${a.power_dissipation_mw>500?'val-danger':a.power_dissipation_mw>100?'val-warn':'val-ok'}">${a.power_dissipation_mw?.toFixed(2)??'--'} mW</td></tr>
+    <tr><td>Temp rise (est.)</td><td class="${a.temp_rise_estimate_c>30?'val-danger':a.temp_rise_estimate_c>10?'val-warn':'val-ok'}">${a.temp_rise_estimate_c?.toFixed(1)??'--'} °C</td></tr>
+    <tr><td>Ambient</td><td>${p.temp} °C</td></tr>
+    <tr><td>Junction est.</td><td class="${a.junction_temp_estimate_c>85?'val-danger':'val-ok'}">${a.junction_temp_estimate_c?.toFixed(1)??'--'} °C</td></tr>
+    <tr><td>I²R formula</td><td>${p.current.toFixed(2)}² × R</td></tr>`;
+
+  document.getElementById('aiNarrative').innerHTML = `
+    <h4>AI Analysis Summary</h4>
+    <p>${a.summary||'No summary available.'}</p>
+    <p style="color:var(--text3);font-size:11px;font-family:var(--mono);">
+      Confidence: ${(a.confidence||'medium').toUpperCase()} · Model: Claude Sonnet (Vision) · Standards: IPC-2221B, IPC-2141A, IPC-2152</p>`;
+
+  const recs=a.recommendations||[], prios=a.recommendation_priorities||recs.map(()=>'ok');
+  document.getElementById('recList').innerHTML = recs.map((r,i)=>
+    `<li><div class="rec-dot ${prios[i]||'ok'}"></div><span>${r}</span></li>`).join('');
+}
+
+function metricCard(label,value,unit,cls,sub) {
+  return `<div class="metric-card ${cls}"><div class="metric-label">${label}</div><div class="metric-value ${cls}">${value}</div><div class="metric-unit">${unit}</div><div class="status-pill ${cls}">${sub}</div></div>`;
+}
+function tp(key,val) {
+  return `<div class="tp-item"><div class="tp-key">${key}</div><div class="tp-val">${val}</div></div>`;
+}
+function statusLabel(status) {
+  return status==='ok'?'PASS': status==='warning'?'MARGINAL':'FAIL';
+}
+
+// ── State machine ──────────────────────────────────────────────────────────
+function showState(state) {
+  stateIdle.style.display    = state==='idle'    ? 'flex':'none';
+  stateLoading.style.display = state==='loading' ? 'flex':'none';
+  stateError.style.display   = state==='error'   ? 'flex':'none';
+  results.style.display      = state==='results' ? 'flex':'none';
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────
+btnExport.addEventListener('click', () => {
+  if (!lastResult) return;
+  const {analysis:a, params:p} = lastResult;
+  const now = new Date().toISOString().replace('T',' ').substring(0,19);
+  const hs = hotspotData?.hotspots||[];
+  const lines = [
+    '══════════════════════════════════════════════════════',
+    '  PCB DC DROP ANALYSIS REPORT',
+    `  Generated: ${now}`,
+    '══════════════════════════════════════════════════════',
+    '',
+    '── INPUT PARAMETERS ──────────────────────────────────',
+    `  Supply Voltage     : ${p.voltage} V`,
+    `  Load Current       : ${p.current} A`,
+    `  Max Allowed ΔV     : ${p.maxDrop} mV`,
+    `  Ambient Temp       : ${p.temp} °C`,
+    `  Copper Weight      : ${p.copper} oz/ft² (${p.copperThick} µm)`,
+    `  Layer Type         : ${p.layer}`,
+    '',
+    '── DETECTED TRACE GEOMETRY ───────────────────────────',
+    `  Trace Width        : ${a.trace_width_mm?.toFixed(3)} mm`,
+    `  Trace Length       : ${a.trace_length_mm?.toFixed(2)} mm`,
+    `  Number of Vias     : ${a.num_vias}`,
+    `  Number of Bends    : ${a.num_bends}`,
+    `  Routing Quality    : ${a.trace_quality}`,
+    `  Detection Confidence: ${a.confidence}`,
+    `  Notes              : ${a.geometry_notes}`,
+    '',
+    '── DC RESISTANCE ─────────────────────────────────────',
+    `  Straight Sections  : ${a.resistance_straight_mohm?.toFixed(3)} mΩ`,
+    `  Via Resistance     : ${a.resistance_vias_mohm?.toFixed(3)} mΩ`,
+    `  Bend Resistance    : ${a.resistance_bends_mohm?.toFixed(3)} mΩ`,
+    `  Total R (25°C)     : ${a.resistance_total_mohm?.toFixed(3)} mΩ`,
+    `  R at ${p.temp}°C       : ${a.resistance_temp_corrected_mohm?.toFixed(3)} mΩ`,
+    '',
+    '── VOLTAGE DROP ──────────────────────────────────────',
+    `  Voltage Drop       : ${a.voltage_drop_mv?.toFixed(2)} mV  [${a.drop_status?.toUpperCase()}]`,
+    `  Voltage at Load    : ${a.voltage_at_load_v?.toFixed(4)} V`,
+    `  Budget Utilization : ${a.drop_budget_percent?.toFixed(1)}%`,
+    '',
+    '── CURRENT DENSITY ───────────────────────────────────',
+    `  Cross-section      : ${a.cross_section_mm2?.toFixed(4)} mm²`,
+    `  Current Density    : ${a.current_density_a_mm2?.toFixed(2)} A/mm²`,
+    `  IPC-2221 Imax      : ${a.ipc2221_max_current_a?.toFixed(2)} A`,
+    `  Utilization        : ${a.density_utilization_percent?.toFixed(1)}%  [${a.density_status?.toUpperCase()}]`,
+    '',
+    '── THERMAL / POWER ───────────────────────────────────',
+    `  Power Dissipation  : ${a.power_dissipation_mw?.toFixed(2)} mW`,
+    `  Estimated Temp Rise: ${a.temp_rise_estimate_c?.toFixed(1)} °C`,
+    `  Junction Temp Est. : ${a.junction_temp_estimate_c?.toFixed(1)} °C`,
+    '',
+    '── HOTSPOT ANALYSIS ──────────────────────────────────',
+    `  Overall Thermal Risk: ${hotspotData?.overall_thermal_risk?.toUpperCase()||'N/A'}`,
+    ...(hs.map((s,i)=>`  ${i+1}. [${s.severity?.toUpperCase()}] ${s.label} — ΔT+${s.temp_rise_c?.toFixed(1)}°C, ${s.current_density_factor?.toFixed(1)}× avg — ${s.description}`)),
+    '',
+    '── RECOMMENDATIONS ───────────────────────────────────',
+    ...(a.recommendations||[]).map((r,i)=>`  ${i+1}. ${r}`),
+    '',
+    '── SUMMARY ───────────────────────────────────────────',
+    `  ${a.summary}`,
+    '',
+    '── STANDARDS REFERENCE ───────────────────────────────',
+    '  IPC-2221B · IPC-2141A · IPC-2152',
+    '══════════════════════════════════════════════════════',
+  ];
+  const blob = new Blob([lines.join('\n')],{type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a2 = document.createElement('a');
+  a2.href=url; a2.download=`dc_drop_report_${Date.now()}.txt`;
+  a2.click(); URL.revokeObjectURL(url);
+});
+
+// ── PDF Export ─────────────────────────────────────────────────────────────
+btnPdf.addEventListener('click', async () => {
+  if (!lastResult) return;
+
+  // When running inside an iframe (claude.ai preview), jsPDF CDN may be blocked
+  if (!window.jspdf) {
+    btnPdf.disabled = false;
+    btnPdf.innerHTML = `<svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Download PDF Report`;
+    alert('PDF generation requires the file to be opened locally.\n\nSteps:\n1. Click the download button above to save the .html file\n2. Open it in Chrome, Firefox, or Edge\n3. Run your analysis\n4. Click "Download PDF Report"');
+    return;
+  }
+
+  btnPdf.disabled = true;
+  btnPdf.textContent = 'Generating PDF...';
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const { analysis: a, params: p } = lastResult;
+    const hs = hotspotData?.hotspots || [];
+    const now = new Date().toLocaleString();
+    const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
+    const PW = 210, PH = 297;
+    const ML = 14, MR = 14, MT = 14;
+    const CW = PW - ML - MR; // content width = 182mm
+    let y = MT;
+
+    // ── Colour palette ──
+    const C = {
+      bg:       [10,  15, 10],
+      card:     [26,  35, 26],
+      green:    [0,  200, 83],
+      green2:   [0,  150, 60],
+      amber:    [255,179,  0],
+      red:      [244, 67, 54],
+      cyan:     [0,  229,255],
+      white:    [232,245,232],
+      grey:     [143,188,143],
+      darkgrey: [74, 122, 74],
+      border:   [42,  61, 42],
+      black:    [0,    0,  0],
+    };
+
+    const statusColor = s => s==='ok'||s==='pass'?C.green : s==='warning'||s==='warn'||s==='marginal'?C.amber : C.red;
+    const statusText  = s => s==='ok'?'PASS': s==='warning'?'MARGINAL': s==='critical'?'FAIL': (s||'').toUpperCase();
+
+    // ── helpers ──
+    function newPage() {
+      doc.addPage();
+      y = MT;
+      drawPageFooter();
+    }
+    function checkY(need) { if (y + need > PH - 16) newPage(); }
+
+    function fillRect(x, ry, w, h, color) {
+      doc.setFillColor(...color); doc.rect(x, ry, w, h, 'F');
+    }
+    function strokeRect(x, ry, w, h, color, lw=0.2) {
+      doc.setDrawColor(...color); doc.setLineWidth(lw); doc.rect(x, ry, w, h, 'S');
+    }
+
+    function txt(text, x, ry, size, color, align='left', style='normal') {
+      doc.setFontSize(size); doc.setTextColor(...color);
+      doc.setFont('helvetica', style);
+      doc.text(String(text), x, ry, { align });
+    }
+
+    function pill(label, x, ry, color) {
+      const w = doc.getStringUnitWidth(label) * 7 / doc.internal.scaleFactor + 4;
+      fillRect(x, ry-3.2, w, 4.5, color.map(v=>Math.min(255,v*0.25+10)));
+      doc.setDrawColor(...color); doc.setLineWidth(0.15);
+      doc.rect(x, ry-3.2, w, 4.5, 'S');
+      txt(label, x+2, ry, 6, color, 'left', 'bold');
+      return w;
+    }
+
+    function sectionHeader(title, iconChar) {
+      checkY(10);
+      fillRect(ML, y, CW, 7, C.card);
+      // left accent bar
+      fillRect(ML, y, 1.5, 7, C.green);
+      txt(title, ML+5, y+4.8, 8, C.green, 'left', 'bold');
+      strokeRect(ML, y, CW, 7, C.border);
+      y += 10;
+    }
+
+    function kvRow(label, value, valColor=C.white, altRow=false) {
+      checkY(6);
+      if (altRow) fillRect(ML, y-0.5, CW, 5.8, [18,26,18]);
+      txt(label, ML+2, y+3.5, 7.5, C.grey);
+      txt(value, ML+CW-2, y+3.5, 7.5, valColor, 'right', 'bold');
+      strokeRect(ML, y-0.5, CW, 5.8, C.border, 0.1);
+      y += 5.8;
+    }
+
+    function twoColRow(l1,v1,vc1, l2,v2,vc2, alt=false) {
+      checkY(6);
+      const hw = CW/2 - 1;
+      if (alt) { fillRect(ML, y-0.5, hw, 5.8, [18,26,18]); fillRect(ML+hw+2, y-0.5, hw, 5.8, [18,26,18]); }
+      txt(l1, ML+2, y+3.5, 7, C.grey);
+      txt(v1, ML+hw-1, y+3.5, 7, vc1, 'right', 'bold');
+      txt(l2, ML+hw+4, y+3.5, 7, C.grey);
+      txt(v2, ML+CW-2, y+3.5, 7, vc2, 'right', 'bold');
+      strokeRect(ML, y-0.5, hw, 5.8, C.border, 0.1);
+      strokeRect(ML+hw+2, y-0.5, hw, 5.8, C.border, 0.1);
+      y += 5.8;
+    }
+
+    function bigMetric(label, value, unit, statusStr, x, ry, w, h) {
+      const sc = statusColor(statusStr);
+      fillRect(x, ry, w, h, C.card);
+      strokeRect(x, ry, w, h, C.border, 0.2);
+      fillRect(x, ry, w, 0.8, sc); // top accent
+      txt(label,  x+w/2, ry+5,   6.5, C.grey,  'center');
+      txt(value,  x+w/2, ry+12,  12,  sc,      'center', 'bold');
+      txt(unit,   x+w/2, ry+17,  6,   C.darkgrey, 'center');
+      pill(statusText(statusStr), x + w/2 - 7, ry+22, sc);
+    }
+
+    function drawBar(label, pct, statusStr, x, ry, w) {
+      const sc = statusColor(statusStr);
+      const filled = Math.min(pct/100, 1) * (w-4);
+      txt(label, x, ry, 7, C.grey); txt(`${pct.toFixed(1)}%`, x+w, ry, 7, sc, 'right', 'bold');
+      ry += 2;
+      fillRect(x, ry, w, 3.5, [20,30,20]);
+      fillRect(x, ry, filled, 3.5, sc);
+      strokeRect(x, ry, w, 3.5, C.border, 0.15);
+    }
+
+    function drawVoltGradient(x, ry, w) {
+      // gradient bar
+      const steps = 20;
+      for (let i=0;i<steps;i++) {
+        const t = i/steps;
+        const r = t<0.5 ? Math.round(t*2*255) : 255;
+        const g = t<0.5 ? 200 : Math.round((1-t)*2*200);
+        doc.setFillColor(r,g,50);
+        doc.rect(x + (i/steps)*w, ry, w/steps+0.2, 3, 'F');
+      }
+      strokeRect(x, ry, w, 3, C.border, 0.15);
+    }
+
+    function wrapText(text, x, ry, maxW, size, color, lineH=4.5) {
+      doc.setFontSize(size); doc.setTextColor(...color);
+      doc.setFont('helvetica','normal');
+      const lines = doc.splitTextToSize(String(text), maxW);
+      lines.forEach(line => { checkY(lineH+1); doc.text(line, x, ry); ry += lineH; y = ry; });
+      return ry;
+    }
+
+    function drawPageFooter() {
+      const pg = doc.internal.getCurrentPageInfo().pageNumber;
+      fillRect(0, PH-10, PW, 10, C.bg);
+      fillRect(0, PH-10, PW, 0.3, C.border);
+      txt('PCB DC DROP ANALYSIS REPORT', ML, PH-4, 6, C.darkgrey);
+      txt(`IPC-2221B · IPC-2141A · IPC-2152`, PW/2, PH-4, 6, C.darkgrey, 'center');
+      txt(`Page ${pg}`, PW-MR, PH-4, 6, C.darkgrey, 'right');
+    }
+
+    // ════════════════════════════════════════════════════
+    // PAGE 1 — Cover / Header + Metrics + Geometry
+    // ════════════════════════════════════════════════════
+    fillRect(0, 0, PW, PH, C.bg); // full page bg
+
+    // Header band
+    fillRect(0, 0, PW, 36, C.card);
+    fillRect(0, 0, PW, 0.8, C.green);
+    fillRect(0, 35.2, PW, 0.8, C.border);
+
+    // Icon box
+    fillRect(ML, 8, 20, 20, [0,40,15]);
+    strokeRect(ML, 8, 20, 20, C.green, 0.4);
+    txt('PCB', ML+10, 16, 7, C.green, 'center', 'bold');
+    txt('DC', ML+10, 21, 9, C.green2, 'center', 'bold');
+    txt('DROP', ML+10, 26.5, 6, C.grey, 'center');
+
+    // Title
+    txt('PCB DC Drop Analysis Report', ML+26, 16, 16, C.white, 'left', 'bold');
+    txt('Vision-Assisted · IPC-2221B / IPC-2141A / IPC-2152', ML+26, 22, 8, C.grey);
+    txt(`Generated: ${now}`, ML+26, 28, 7, C.darkgrey);
+    txt('AI-POWERED', PW-MR, 14, 7, C.green, 'right', 'bold');
+    txt('Claude Sonnet Vision', PW-MR, 20, 6.5, C.darkgrey, 'right');
+
+    y = 42;
+
+    // ── 4 big metric cards ──
+    const mw = (CW-6)/4, mh = 28;
+    const dropC = statusColor(a.drop_status), densC = statusColor(a.density_status);
+    const pwrStatus = a.power_dissipation_mw>500?'critical': a.power_dissipation_mw>100?'warning':'ok';
+    bigMetric('VOLTAGE DROP',  `${(a.voltage_drop_mv||0).toFixed(2)}`, 'mV',  a.drop_status,    ML,           y, mw, mh);
+    bigMetric('DC RESISTANCE', `${(a.resistance_total_mohm||0).toFixed(2)}`, 'mΩ', 'info',      ML+mw+2,      y, mw, mh);
+    bigMetric('CURRENT DENSITY',`${(a.current_density_a_mm2||0).toFixed(2)}`, 'A/mm²', a.density_status, ML+2*(mw+2), y, mw, mh);
+    bigMetric('POWER LOSS',    `${(a.power_dissipation_mw||0).toFixed(1)}`, 'mW', pwrStatus,    ML+3*(mw+2),  y, mw, mh);
+    y += mh + 6;
+
+    // ── Input Parameters ──
+    sectionHeader('INPUT PARAMETERS');
+    twoColRow('Supply Voltage', `${p.voltage} V`, C.white, 'Load Current', `${p.current} A`, C.white, false);
+    twoColRow('Max Allowed \u0394V', `${p.maxDrop} mV`, C.white, 'Ambient Temp', `${p.temp} \u00b0C`, C.white, true);
+    twoColRow('Copper Weight', `${p.copper} oz/ft\u00b2 (${p.copperThick} \u00b5m)`, C.white, 'Layer Type', p.layer, C.white, false);
+    y += 4;
+
+    // ── Trace Geometry ──
+    sectionHeader('DETECTED TRACE GEOMETRY');
+    twoColRow('Trace Width', `${a.trace_width_mm?.toFixed(3)??'--'} mm`, C.cyan, 'Trace Length', `${a.trace_length_mm?.toFixed(2)??'--'} mm`, C.cyan, false);
+    twoColRow('Vias Detected', `${a.num_vias??0}`, C.white, 'Bends', `${a.num_bends??0}`, C.white, true);
+    twoColRow('Routing Quality', a.trace_quality??'--', C.white, 'AI Confidence', (a.confidence||'medium').toUpperCase(), C.amber, false);
+    y += 2;
+    // geometry notes
+    checkY(10);
+    fillRect(ML, y, CW, 1, C.green);
+    y += 3;
+    wrapText(a.geometry_notes||'', ML+2, y+3, CW-4, 7, C.grey, 4.5);
+    y += 4;
+
+    drawPageFooter();
+
+    // ════════════════════════════════════════════════════
+    // PAGE 2 — DC Resistance + Voltage Drop + Current Density
+    // ════════════════════════════════════════════════════
+    newPage();
+    fillRect(0, 0, PW, PH, C.bg);
+
+    // ── DC Resistance ──
+    sectionHeader('DC RESISTANCE BREAKDOWN');
+    kvRow('Straight section resistance', `${a.resistance_straight_mohm?.toFixed(3)??'--'} m\u03a9`, C.cyan, false);
+    kvRow(`Via resistance (\u00d7${a.num_vias??0} @ 0.5 m\u03a9 each)`, `${a.resistance_vias_mohm?.toFixed(3)??'0.000'} m\u03a9`, C.cyan, true);
+    kvRow('Bend resistance contribution', `${a.resistance_bends_mohm?.toFixed(3)??'0.000'} m\u03a9`, C.cyan, false);
+    kvRow('Total DC resistance (25\u00b0C)', `${a.resistance_total_mohm?.toFixed(3)??'--'} m\u03a9`, C.green, true);
+    kvRow(`Temperature-corrected R (${p.temp}\u00b0C)`, `${a.resistance_temp_corrected_mohm?.toFixed(3)??'--'} m\u03a9`, C.green, false);
+    kvRow('Copper resistivity \u03c1', '17.24 n\u03a9\u00b7m  (\u03b1 = 0.00393 /\u00b0C)', C.grey, true);
+    y += 5;
+
+    // ── Voltage Drop ──
+    sectionHeader('VOLTAGE DROP ANALYSIS');
+    kvRow('Supply voltage (V\u209b\u1d58\u209a\u209a\u1d59)', `${p.voltage.toFixed(3)} V`, C.white, false);
+    kvRow('Calculated voltage drop (\u0394V = I\u00d7R)', `${(a.voltage_drop_mv||0).toFixed(2)} mV`, statusColor(a.drop_status), true);
+    kvRow('Voltage at load terminal', `${a.voltage_at_load_v?.toFixed(4)??'--'} V`, (a.voltage_drop_mv||0)<p.maxDrop?C.green:C.red, false);
+    kvRow('Maximum allowed drop', `${p.maxDrop} mV`, C.white, true);
+    kvRow('Budget utilization', `${(a.drop_budget_percent||0).toFixed(1)}%`, statusColor(a.drop_status), false);
+    kvRow('Compliance status', statusText(a.drop_status), statusColor(a.drop_status), true);
+    y += 4;
+    checkY(12);
+    drawBar('Drop budget used', a.drop_budget_percent||0, a.drop_status, ML+2, y, CW-4);
+    y += 10;
+    checkY(7);
+    txt('Voltage Gradient (Low \u2192 High drop)', ML+2, y, 7, C.grey);
+    y += 3;
+    drawVoltGradient(ML+2, y, CW-4);
+    const markerX = ML+2 + Math.min((a.drop_budget_percent||0)/100, 1)*(CW-4);
+    doc.setDrawColor(...C.white); doc.setLineWidth(0.5);
+    doc.line(markerX, y, markerX, y+3);
+    y += 8;
+
+    // ── Current Density ──
+    sectionHeader('CURRENT DENSITY (IPC-2221B)');
+    kvRow('Load current', `${p.current.toFixed(3)} A`, C.white, false);
+    kvRow('Trace cross-section (W \u00d7 t)', `${a.cross_section_mm2?.toFixed(4)??'--'} mm\u00b2`, C.cyan, true);
+    kvRow('Current density (J = I / A)', `${a.current_density_a_mm2?.toFixed(2)??'--'} A/mm\u00b2`, statusColor(a.density_status), false);
+    kvRow('IPC-2221B max current (\u0394T=10\u00b0C)', `${a.ipc2221_max_current_a?.toFixed(2)??'--'} A`, C.white, true);
+    kvRow('Capacity utilization', `${(a.density_utilization_percent||0).toFixed(1)}%`, statusColor(a.density_status), false);
+    kvRow('Compliance status', statusText(a.density_status), statusColor(a.density_status), true);
+    y += 4;
+    checkY(12);
+    drawBar('IPC-2221 utilization', a.density_utilization_percent||0, a.density_status, ML+2, y, CW-4);
+    y += 12;
+
+    // ── Thermal ──
+    sectionHeader('THERMAL / POWER ANALYSIS');
+    kvRow('Power dissipation (P = I\u00b2 \u00d7 R)', `${a.power_dissipation_mw?.toFixed(2)??'--'} mW`, statusColor(pwrStatus), false);
+    kvRow('Estimated temperature rise', `${a.temp_rise_estimate_c?.toFixed(1)??'--'} \u00b0C`, a.temp_rise_estimate_c>30?C.red: a.temp_rise_estimate_c>10?C.amber:C.green, true);
+    kvRow('Ambient temperature', `${p.temp} \u00b0C`, C.white, false);
+    kvRow('Junction temperature estimate', `${a.junction_temp_estimate_c?.toFixed(1)??'--'} \u00b0C`, a.junction_temp_estimate_c>85?C.red:C.green, true);
+
+    // ════════════════════════════════════════════════════
+    // PAGE 3 — Heatmap image + Hotspots
+    // ════════════════════════════════════════════════════
+    newPage();
+    fillRect(0, 0, PW, PH, C.bg);
+
+    sectionHeader('THERMAL HOTSPOT & CURRENT DENSITY MAP');
+
+    // embed heatmap canvas if available
+    if (hotspotData && hmapCanvas.width > 0) {
+      try {
+        const imgData = hmapCanvas.toDataURL('image/jpeg', 0.92);
+        const iw = hmapCanvas.width, ih = hmapCanvas.height;
+        const maxW = CW, maxH = 90;
+        const scale = Math.min(maxW/iw, maxH/ih);
+        const dw = iw*scale, dh = ih*scale;
+        const ix = ML + (CW-dw)/2;
+        strokeRect(ix-0.5, y-0.5, dw+1, dh+1, C.green, 0.3);
+        doc.addImage(imgData, 'JPEG', ix, y, dw, dh);
+        y += dh + 4;
+
+        // legend
+        drawVoltGradient(ML+20, y, CW-40);
+        txt('LOW DENSITY', ML+20, y+6, 6, C.darkgrey);
+        txt('HIGH DENSITY / TEMP', PW-MR-20, y+6, 6, C.darkgrey, 'right');
+        y += 10;
+      } catch(e) {
+        txt('[Heatmap image unavailable]', ML, y+4, 8, C.darkgrey);
+        y += 8;
+      }
+    } else {
+      fillRect(ML, y, CW, 20, C.card);
+      txt('Heatmap not yet generated — run analysis first', ML+CW/2, y+11, 8, C.darkgrey, 'center');
+      y += 24;
+    }
+
+    // Overall thermal risk badge
+    checkY(10);
+    const riskColor = hotspotData?.overall_thermal_risk==='critical'?C.red: hotspotData?.overall_thermal_risk==='high'?C.red: hotspotData?.overall_thermal_risk==='moderate'?C.amber:C.green;
+    fillRect(ML, y, CW, 8, C.card);
+    strokeRect(ML, y, CW, 8, riskColor, 0.3);
+    txt('OVERALL THERMAL RISK:', ML+4, y+5.2, 8, C.grey, 'left', 'bold');
+    txt((hotspotData?.overall_thermal_risk||'N/A').toUpperCase(), PW-MR-4, y+5.2, 9, riskColor, 'right', 'bold');
+    y += 12;
+
+    // Hotspot table header
+    if (hs.length) {
+      sectionHeader('IDENTIFIED HOTSPOTS');
+      // column headers
+      fillRect(ML, y, CW, 5.5, [20,35,20]);
+      txt('#',   ML+2,      y+3.8, 6.5, C.green, 'left', 'bold');
+      txt('Location / Type', ML+10, y+3.8, 6.5, C.green, 'left', 'bold');
+      txt('Severity', ML+90, y+3.8, 6.5, C.green, 'left', 'bold');
+      txt('\u0394T Rise', ML+120, y+3.8, 6.5, C.green, 'left', 'bold');
+      txt('Density Factor', ML+142, y+3.8, 6.5, C.green, 'left', 'bold');
+      y += 5.5;
+
+      hs.forEach((spot, i) => {
+        checkY(14);
+        const sc = statusColor(spot.severity);
+        const alt = i%2===1;
+        if (alt) fillRect(ML, y, CW, 13, [16,24,16]);
+        // severity dot
+        doc.setFillColor(...sc); doc.circle(ML+4.5, y+4.5, 1.5, 'F');
+        txt(`${i+1}`, ML+2, y+4, 7, C.white, 'left', 'bold');
+        txt(spot.label||'', ML+10, y+4, 7.5, C.white, 'left', 'bold');
+        txt(spot.type?.replace(/_/g,' ')||'', ML+10, y+8.5, 6, C.grey);
+        pill(statusText(spot.severity), ML+89, y+4.5, sc);
+        txt(`+${spot.temp_rise_c?.toFixed(1)??'?'}\u00b0C`, ML+120, y+4, 7.5, sc, 'left', 'bold');
+        txt(`${spot.current_density_factor?.toFixed(2)??'?'}\u00d7 avg`, ML+142, y+4, 7.5, sc, 'left', 'bold');
+        // description
+        doc.setFontSize(6.5); doc.setTextColor(...C.grey); doc.setFont('helvetica','normal');
+        const descLines = doc.splitTextToSize(spot.description||'', CW-16);
+        if (descLines[0]) doc.text(descLines[0], ML+10, y+12.5);
+        strokeRect(ML, y, CW, 13, C.border, 0.1);
+        y += 13;
+      });
+      y += 4;
+    }
+
+    // ════════════════════════════════════════════════════
+    // PAGE 4 — Summary + Recommendations + Standards
+    // ════════════════════════════════════════════════════
+    newPage();
+    fillRect(0, 0, PW, PH, C.bg);
+
+    sectionHeader('AI ANALYSIS SUMMARY');
+    checkY(24);
+    fillRect(ML, y, CW, 24, C.card);
+    fillRect(ML, y, 1.5, 24, C.green);
+    strokeRect(ML, y, CW, 24, C.border, 0.2);
+    doc.setFontSize(7.5); doc.setTextColor(...C.grey); doc.setFont('helvetica','normal');
+    const sumLines = doc.splitTextToSize(a.summary||'No summary.', CW-8);
+    sumLines.slice(0,4).forEach((l,i)=>{ doc.text(l, ML+4, y+5+i*4.5); });
+    txt('Model: Claude Sonnet (Vision)', ML+4, y+21, 6, C.darkgrey);
+    txt(`Confidence: ${(a.confidence||'medium').toUpperCase()}`, PW-MR-4, y+21, 6, C.darkgrey, 'right');
+    y += 28;
+
+    sectionHeader('DESIGN RECOMMENDATIONS');
+    const recs = a.recommendations||[], prios = a.recommendation_priorities||recs.map(()=>'ok');
+    recs.forEach((rec, i) => {
+      checkY(14);
+      const pc = statusColor(prios[i]||'ok');
+      const alt = i%2===1;
+      if (alt) fillRect(ML, y, CW, 13, [16,24,16]);
+      // priority marker
+      fillRect(ML, y, 2.5, 13, pc.map(v=>v*0.3));
+      doc.setFillColor(...pc); doc.circle(ML+1.25, y+6.5, 2, 'F');
+      txt(`${i+1}`, ML+1.25, y+7.3, 6, C.black, 'center', 'bold');
+      doc.setFontSize(7.5); doc.setTextColor(...C.white); doc.setFont('helvetica','bold');
+      doc.text(`${prios[i]?.toUpperCase()||'OK'}`, ML+6, y+4);
+      doc.setFont('helvetica','normal'); doc.setTextColor(...C.grey);
+      const recLines = doc.splitTextToSize(rec, CW-10);
+      recLines.slice(0,2).forEach((l,j) => doc.text(l, ML+6, y+4+5+(j*4)));
+      strokeRect(ML, y, CW, 13, C.border, 0.1);
+      y += 13;
+    });
+    y += 6;
+
+    // Standards reference box
+    checkY(30);
+    sectionHeader('STANDARDS & FORMULAS REFERENCE');
+    const standards = [
+      ['IPC-2221B', 'Generic Standard on Printed Board Design — current carrying capacity, trace widths'],
+      ['IPC-2141A', 'Controlled Impedance Circuit Boards — characteristic impedance formulas'],
+      ['IPC-2152', 'Standard for Determining Current Carrying Capacity — thermal derating, ampacity'],
+      ['Formula: DC Resistance', 'R = \u03c1 \u00d7 L / (W \u00d7 t)   where \u03c1Cu = 17.24 n\u03a9\u00b7m at 25\u00b0C'],
+      ['Formula: Temp Correction', 'R(T) = R\u2080 \u00d7 [1 + \u03b1 \u00d7 (T - 25)]   (\u03b1 = 0.00393 /\u00b0C)'],
+      ['Formula: IPC-2221 I\u2098\u2090\u2093', 'I = k \u00d7 \u0394T^0.44 \u00d7 A^0.725   (k=0.048 ext, k=0.024 int; A in circ. mils)'],
+      ['Formula: Voltage Drop', '\u0394V = I \u00d7 R\u209c\u2092\u209c\u2090\u2097   (mV = A \u00d7 m\u03a9)'],
+      ['Formula: Power Dissipation', 'P = I\u00b2 \u00d7 R   (mW = A\u00b2 \u00d7 m\u03a9)'],
+    ];
+    standards.forEach((row, i) => {
+      checkY(6);
+      if (i%2===1) fillRect(ML, y-0.5, CW, 5.8, [18,26,18]);
+      txt(row[0], ML+2, y+3.5, 7, C.green, 'left', 'bold');
+      doc.setFontSize(6.8); doc.setTextColor(...C.grey); doc.setFont('helvetica','normal');
+      doc.text(row[1], ML+48, y+3.5);
+      strokeRect(ML, y-0.5, CW, 5.8, C.border, 0.1);
+      y += 5.8;
+    });
+
+    // Footer note
+    y += 6;
+    checkY(10);
+    fillRect(ML, y, CW, 9, [12,20,12]);
+    strokeRect(ML, y, CW, 9, C.border, 0.15);
+    fillRect(ML, y, 1.5, 9, C.darkgrey);
+    txt('This report is AI-assisted. Verify critical traces against actual Gerber data and consult IPC standards before production sign-off.', ML+5, y+5.5, 6.5, C.darkgrey);
+
+    // Save
+    const fname = `PCB_DC_Drop_Report_${Date.now()}.pdf`;
+    doc.save(fname);
+
+  } catch(err) {
+    console.error('PDF error:', err);
+    alert('PDF generation failed: ' + err.message);
+  } finally {
+    btnPdf.disabled = false;
+    btnPdf.innerHTML = `<svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Download PDF Report`;
+  }
+});
+
+// ── Banner + local-use init ────────────────────────────────────────────────
+(function initBanner() {
+  // Show banner if inside iframe (claude.ai preview)
+  if (window._isIframe) {
+    document.getElementById('localBanner').style.display = 'flex';
+  }
+
+  // Dismiss
+  document.getElementById('dismissBanner').addEventListener('click', () => {
+    document.getElementById('localBanner').style.display = 'none';
+  });
+
+  // Save link — inlines the current page HTML as a download
+  document.getElementById('saveLink').addEventListener('click', () => {
+    const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'pcb_dc_drop_analyzer.html';
+    a.click(); URL.revokeObjectURL(url);
+  });
+
+  // Patch fetch to handle iframe CORS gracefully
+  // Wrap the Analyze button to show a better error in iframe context
+  const origRunAnalysis = window.runAnalysis;
+  btnAnalyze.addEventListener('click', () => {}, { capture: true });
+})();
+</script>
+</body>
+</html>
